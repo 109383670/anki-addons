@@ -1,20 +1,21 @@
 # -*- mode: Python ; coding: utf-8 -*-
-# © 2012–4: Roland Sieker <ospalh@gmail.com>
+# © 2012–2016 Roland Sieker <ospalh@gmail.com>
 #
 # License: GNU GPL, version 3 or later;
 # http://www.gnu.org/copyleft/gpl.html
 u"""Anki 2 add-on that opens an audio editor."""
 
+from PyQt4.QtCore import SIGNAL
+from PyQt4.QtGui import QAction, QIcon, QMenu
 import copy
 import os
 import re
 import subprocess
 import sys
 
-from aqt import utils
-from aqt import mw
-from PyQt4.QtGui import QAction, QIcon, QMenu
-from PyQt4.QtCore import SIGNAL
+from anki.hooks import addHook
+from aqt import mw, utils
+from aqt.editor import Editor
 
 __version__ = "2.0.0"
 
@@ -37,11 +38,20 @@ def sound_ending(fname):
     return None
 
 
-def edit_files(note):
-    u"""Call the audio editor with all sounds from the note"""
+def edit_files(note=None, text=None):
+    u"""Edit files of a note or for a given text
+
+    Call the audio editor with all sounds from the note, or for a given
+    text"""
     # First, join all fields. Use some random field delimiter. (Could
     # be '', i guess.) EAFP, raise stuff when we don't have a note.
-    text = '@'.join(note.fields)
+    if text is None:
+        try:
+            text = '@'.join(note.fields)
+        except AttributeError:
+            # Maybe we don’t have a note
+            print('debug: editfiles w/o note')
+            return
     matches = [fn for fn in re.findall(sound_re, text) if sound_ending(fn)]
     if command_list and matches:
         call_edit(matches)
@@ -104,10 +114,22 @@ in path. Please download and install it.'''
 def edit_current_note():
     u"""Call the action to edit the sound files of the current note."""
     try:
-        edit_files(mw.reviewer.card.note())
+        edit_files(note=mw.reviewer.card.note())
     except AttributeError:
         # No note.
         pass
+
+
+def edit_from_editor(editor):
+    u"""Edit audio of the field currently being edited."""
+    edit_files(text=editor.note.fields[editor.currentField])
+
+
+def setup_button(editor):
+    u"""Add the buttons to the editor."""
+    editor._addButton(
+        "wave_button", lambda ed=editor: edit_from_editor(ed),
+        tip=u"wave", text='W')
 
 
 if find_editor():
@@ -125,6 +147,7 @@ if find_editor():
     mw.edit_audio_fiels_action = QAction(mw)
     mw.edit_audio_fiels_action.setText(u"Edit audio")
     icons_dir = os.path.join(mw.pm.addonFolder(), 'color_icons')
+    addHook("setupEditorButtons", setup_button)
     try:
         # Bad hack. Use the icon brought along from another add-on and
         # nicked from the program we use. That program is GPLed, so we
